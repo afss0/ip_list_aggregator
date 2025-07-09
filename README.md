@@ -48,7 +48,7 @@ Follow these steps to set up the project on your server.
 ### 1. Clone the Repository
 
 ```bash
-git clone <repo-url> ~/git-repos/ip_list_aggregator
+git clone https://github.com/afss0/ip_list_aggregator/ ~/git-repos/ip_list_aggregator
 cd ~/git-repos/ip_list_aggregator
 ```
 
