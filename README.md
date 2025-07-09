@@ -19,7 +19,9 @@ Currently, the following sources are used:
 - [Stamparm's Ipsum](https://github.com/stamparm/ipsum)
 
 ```markdown
-> If you want to protect your web applications against bots, you may also want to check out [TecharoHQ/anubis](https://github.com/TecharoHQ/anubis/tree/main)
+> If you want to protect your web applications against bots, you may also want to check out:
+
+[TecharoHQ/anubis](https://github.com/TecharoHQ/anubis/tree/main)
 ```
 
 **NOTE:** The default lists included are aggressive and intended to block bad agents **ON SERVERS**. Applying them on a router or desktop **WILL** break connectivity to many services.
