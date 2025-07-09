@@ -1,11 +1,11 @@
-# IP list Aggregator
+# IP List Aggregator
 
-This project provides a python script with a set of tools to automatically download, merge, de-duplicate, and summarize IP lists from multiple sources.
+This project provides a Python script with a set of tools to automatically download, merge, de-duplicate, and summarize IP lists from multiple sources.
 
 There are two main components:
 
-1.  **`ip_list_aggregator.py`**: A Python script that fetches, validates, and processes IP lists.
-2.  **`update_firewall_blocklist_ipset.sh`**: A complementary shell script that uses the generated list to update the system's firewall rules for blocking purposes with zero downtime (optional).
+1. **`ip_list_aggregator.py`**: A Python script that fetches, validates, and processes IP lists.
+2. **`update_firewall_blocklist.sh`**: A complementary shell script that uses the generated list to update the system's firewall rules for blocking purposes with zero downtime (optional).
 
 ## Features
 
@@ -15,15 +15,14 @@ There are two main components:
 
 Currently, the following sources are used:
 
-- [Antoine Vastel's IPS Lists](https://github.com/antoinevastel/avastel-bot-ips-lists)
-
+- [Antoine Vastel's IP Lists](https://github.com/antoinevastel/avastel-bot-ips-lists)
 - [Stamparm's Ipsum](https://github.com/stamparm/ipsum)
 
 ```markdown
 > If you want to protect your web applications against bots, you may also want to check out [TecharoHQ/anubis](https://github.com/TecharoHQ/anubis/tree/main)
 ```
 
-# NOTE: The default lists included are aggressive and intended to block bad agents **IN SERVERS**. Applying them in a router or desktop **WILL** break connectivity to many services.
+**NOTE:** The default lists included are aggressive and intended to block bad agents **ON SERVERS**. Applying them on a router or desktop **WILL** break connectivity to many services.
 
 ## Prerequisites
 
@@ -61,14 +60,14 @@ pip install -r requirements.txt
 
 ### 3. Install System Dependencies
 
-You need ipset and some package to make your firewall rules persistent across reboots.
+You need ipset and some packages to make your firewall rules persistent across reboots.
 
 - For Debian/Ubuntu:
 
-`bash
+```bash
 sudo apt-get update
 sudo apt-get install ipset iptables-persistent ipset-persistent
-`
+```
 
 - For CentOS/RHEL:
 
@@ -78,7 +77,7 @@ sudo systemctl enable iptables
 sudo systemctl enable ipset
 ```
 
-### - 4. Make the Update Script Executable
+### 4. Make the Update Script Executable
 
 ```bash
 sudo chmod +x update_firewall_blocklist.sh
@@ -88,7 +87,7 @@ sudo chmod +x update_firewall_blocklist.sh
 
 It's highly recommended to run the scripts manually once to ensure everything is working correctly.
 
-### 1 - Generate the IP List
+### 1. Generate the IP List
 
 Run the Python script. This will create the merged-ip-list.txt file in the current directory.
 
@@ -96,7 +95,7 @@ Run the Python script. This will create the merged-ip-list.txt file in the curre
 python3 ip_list_aggregator.py
 ```
 
-### 2 - Update the Firewall
+### 2. Update the Firewall
 
 Run the shell script with sudo. This will create the ipset and apply the iptables rules.
 
@@ -104,7 +103,7 @@ Run the shell script with sudo. This will create the ipset and apply the iptable
 sudo ./update_firewall_blocklist.sh
 ```
 
-### 3 - Verify the Results
+### 3. Verify the Results
 
 Check that the ipset was created and populated:
 
@@ -125,7 +124,7 @@ sudo iptables -L OUTPUT -n -v
 
 To keep the blocklist updated automatically, set up two cron jobs.
 
-### 1 - User Cron Job (to run the Python script)
+### 1. User Cron Job (to run the Python script)
 
 ```bash
 crontab -e
@@ -134,18 +133,16 @@ crontab -e
 Add the following line to run the script every day at `23:30` and log its output:
 
 ```crontab
-
 # At 23:30 every day, run the IP list aggregator script
-
-30 23 \* \* \* /usr/bin/python3 ~/git-repos/ip_list_aggregator/ip_list_aggregator.py >> ~/git-repos/ip_list_aggregator/logs/cron.log 2>&1
+30 23 * * * /usr/bin/python3 ~/git-repos/ip_list_aggregator/ip_list_aggregator.py >> ~/git-repos/ip_list_aggregator/logs/cron.log 2>&1
 ```
 
-### 3 - Root Cron Job (to update the firewall)
+### 2. Root Cron Job (to update the firewall)
 
 First, copy the script to the /usr/local/sbin folder and mark it as executable:
 
 ```bash
-sudo cp ./update_firewall_blacklist.sh /usr/local/sbin/update_firewall_blocklist.sh
+sudo cp ./update_firewall_blocklist.sh /usr/local/sbin/update_firewall_blocklist.sh
 sudo chmod +x /usr/local/sbin/update_firewall_blocklist.sh
 ```
 
@@ -159,8 +156,7 @@ Add the following line to run the update script a few minutes later (e.g., at `2
 
 ```crontab
 # At 23:35 every day, update the iptables rules from the generated blocklist
-
-35 23 \* \* \* /usr/local/sbin/update_firewall_blocklist.sh >> /var/log/iptables_update.log 2>&1
+35 23 * * * /usr/local/sbin/update_firewall_blocklist.sh >> /var/log/iptables_update.log 2>&1
 ```
 
 ## Making Firewall Rules Persistent
