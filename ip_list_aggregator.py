@@ -1,5 +1,6 @@
 import argparse
 import ipaddress
+import json
 import logging
 import re
 from pathlib import Path
@@ -57,19 +58,22 @@ def parse_generic_ips(text: str) -> Set[IPAddressObject]:
 
 # --- Core Logic ---
 
-# AI: Load SOURCES from the sources.json file
-SOURCES: List[Dict[str, Any]] = [
-    {
-        "name": "avastel",
-        "url": "https://raw.githubusercontent.com/antoinevastel/avastel-bot-ips-lists/refs/heads/master/avastel-proxy-bot-ips-blocklist-8days.txt",
-        "parser": parse_generic_cidrs,
-    },
-    {
-        "name": "ipsum",
-        "url": "https://raw.githubusercontent.com/stamparm/ipsum/refs/heads/master/ipsum.txt",
-        "parser": parse_generic_ips,
-    },
-]
+def load_sources() -> List[Dict[str, Any]]:
+    """Load sources configuration from sources.json file"""
+    try:
+        with open('sources.json', 'r') as f:
+            sources = json.load(f)
+            # Map parser strings to actual functions
+            parser_map = {
+                'parse_generic_cidrs': parse_generic_cidrs,
+                'parse_generic_ips': parse_generic_ips
+            }
+            for source in sources:
+                source['parser'] = parser_map[source['parser']]
+            return sources
+    except Exception as e:
+        logging.error(f"Failed to load sources.json: {e}")
+        raise
 
 
 def fetch_content(session: requests.Session, url: str) -> str | None:
@@ -122,6 +126,11 @@ def main():
 
     merged_entries: Set[IPAddressObject] = set()
 
+    try:
+        SOURCES = load_sources()
+    except Exception:
+        return
+
     with requests.Session() as session:
         for source in SOURCES:
             name, url, parser_func = source["name"], source["url"], source["parser"]
@@ -145,10 +154,7 @@ def main():
 
     logging.info(f"Total unique entries collected: {len(merged_entries)}")
 
-    # --- NEW: Summarize the networks ---
     logging.info("Summarizing network list to remove redundant subnets...")
-    # `collapse_addresses` creates the minimal set of networks covering all inputs.
-    # For example, if the list contains 1.1.1.1/32 and 1.1.1.0/24, it will only keep 1.1.1.0/24.
     summarized_entries = set(ipaddress.collapse_addresses(merged_entries))
 
     num_removed = len(merged_entries) - len(summarized_entries)
@@ -157,8 +163,7 @@ def main():
             f"Removed {num_removed} subsumed networks. Final count: {len(summarized_entries)}"
         )
     else:
-        logging.info("No redundant networks found to summarize.")
-    # --- End of new section ---
+        logging.info("No redundant networks found to summarize")
 
     if save_to_file(summarized_entries, args.output):
         logging.info(f"Successfully saved all entries to {args.output}")

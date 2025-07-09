@@ -1,0 +1,12 @@
+[
+    {
+        "name": "avastel",
+        "url": "https://raw.githubusercontent.com/antoinevastel/avastel-bot-ips-lists/refs/heads/master/avastel-proxy-bot-ips-blocklist-8days.txt",
+        "parser": "parse_generic_cidrs"
+    },
+    {
+        "name": "ipsum",
+        "url": "https://raw.githubusercontent.com/stamparm/ipsum/refs/heads/master/ipsum.txt",
+        "parser": "parse_generic_ips"
+    }
+]
