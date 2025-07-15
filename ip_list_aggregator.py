@@ -110,10 +110,19 @@ def save_to_file(entries: Set[IPAddressObject], filepath: Path) -> bool:
         return False
 
 
+def filter_whitelisted_ips(blacklist: Set[IPAddressObject], whitelist: Set[IPAddressObject]) -> Set[IPAddressObject]:
+    """Remove whitelisted IPs from the blacklist."""
+    filtered_blacklist = set()
+    for black_entry in blacklist:
+        if not any(black_entry.subnet_of(white_entry) for white_entry in whitelist):
+            filtered_blacklist.add(black_entry)
+    return filtered_blacklist
+
+
 def main():
     """Main function to download, process, summarize, and save IP lists."""
     parser = argparse.ArgumentParser(
-        description="Download, validate, merge, and summarize multiple IP blocklists."
+        description="Download, validate, merge, summarize, and save IP blocklists."
     )
     parser.add_argument(
         "--output",
@@ -124,7 +133,8 @@ def main():
     )
     args = parser.parse_args()
 
-    merged_entries: Set[IPAddressObject] = set()
+    blacklist_entries: Set[IPAddressObject] = set()
+    whitelist_entries: Set[IPAddressObject] = set()
 
     try:
         SOURCES = load_sources()
@@ -133,7 +143,7 @@ def main():
 
     with requests.Session() as session:
         for source in SOURCES:
-            name, url, parser_func = source["name"], source["url"], source["parser"]
+            name, url, parser_func, source_type = source["name"], source["url"], source["parser"], source["type"]
             logging.info(f"Processing source: {name}")
 
             content = fetch_content(session, url)
@@ -144,20 +154,36 @@ def main():
             source_entries = parser_func(content)
             logging.info(f"Found {len(source_entries)} unique entries from {name}.")
 
-            merged_entries.update(source_entries)
+            if source_type == "blacklist":
+                blacklist_entries.update(source_entries)
+            elif source_type == "whitelist":
+                whitelist_entries.update(source_entries)
 
-    if not merged_entries:
+    if not blacklist_entries:
         logging.warning(
-            "No entries were collected. The output file will not be created."
+            "No blacklist entries were collected. The output file will not be created."
         )
         return
 
-    logging.info(f"Total unique entries collected: {len(merged_entries)}")
+    logging.info(f"Total unique blacklist entries collected: {len(blacklist_entries)}")
+
+    # Save blacklist to a buffer file
+    buffer_file = Path("buffer-blacklist.txt")
+    if not save_to_file(blacklist_entries, buffer_file):
+        logging.error(f"Failed to save the buffer blacklist to {buffer_file}")
+        return
+
+    logging.info(f"Buffer blacklist saved to {buffer_file}")
+
+    # Filter out whitelisted IPs from the blacklist
+    filtered_blacklist_entries = filter_whitelisted_ips(blacklist_entries, whitelist_entries)
+
+    logging.info(f"Total unique blacklist entries after filtering: {len(filtered_blacklist_entries)}")
 
     logging.info("Summarizing network list to remove redundant subnets...")
-    summarized_entries = set(ipaddress.collapse_addresses(merged_entries))
+    summarized_entries = set(ipaddress.collapse_addresses(filtered_blacklist_entries))
 
-    num_removed = len(merged_entries) - len(summarized_entries)
+    num_removed = len(filtered_blacklist_entries) - len(summarized_entries)
     if num_removed > 0:
         logging.info(
             f"Removed {num_removed} subsumed networks. Final count: {len(summarized_entries)}"
