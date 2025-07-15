@@ -6,7 +6,7 @@
 # ADD TO THE ROOT USER CRONTAB
 
 # --- Configuration ---
-IP_LIST_FILE="./merged-ip-list.txt"
+IP_LIST_FILE="/var/tmp/ip_list_aggregator/merged-ip-list.txt"
 SET_NAME="bad_ips_set"
 MAX_ELEMS=500000
 

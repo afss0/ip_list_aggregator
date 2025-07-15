@@ -43,7 +43,7 @@ Before you begin, ensure you have the following installed on your system:
 
 ## Installation & Setup
 
-Follow these steps to set up the project on your server.
+Follow these steps to set up the project on your Linux server.
 
 ### 1. Clone the Repository
 
@@ -52,15 +52,7 @@ git clone https://github.com/afss0/ip_list_aggregator/ ~/git-repos/ip_list_aggre
 cd ~/git-repos/ip_list_aggregator
 ```
 
-### 2. Install Python Dependencies
-
-Install the required requests library using the requirements.txt file.
-
-```bash
-pip3 install -r requirements.txt
-```
-
-### 3. Install System Dependencies
+### 2. Install System Dependencies
 
 You need ipset and some packages to make your firewall rules persistent across reboots.
 
@@ -84,23 +76,19 @@ sudo systemctl enable iptables
 sudo systemctl enable ipset
 ```
 
-### 4. Make the Update Script Executable
+### 3. Make the Update Script Executable
 
 ```bash
 mkdir -p ~/git-repos/ip_list_aggregator/logs
 sudo chmod +x update_firewall_blocklist.sh
 ```
 
-## Manual Usage (for Testing)
-
-It's highly recommended to run the scripts manually once to ensure everything is working correctly.
-
-### 1. Generate the IP List
+### 5. Generate the IP List
 
 Run the Python script. This will create the merged-ip-list.txt file in the current directory.
 
 ```bash
-python3 ip_list_aggregator.py
+python3 ip_list_aggregator.py --output "/var/tmp/ip_list_aggregator/merged-ip-list.txt"
 ```
 
 ### 2. Update the Firewall
