@@ -19,7 +19,9 @@ Currently, the following sources are used:
 - [Stamparm's Ipsum](https://github.com/stamparm/ipsum)
 
 ```markdown
-> If you want to protect your web applications against bots, you may also want to check out [TecharoHQ/anubis](https://github.com/TecharoHQ/anubis/tree/main)
+> If you want to protect your web applications against bots, you may also want to check out:
+
+[TecharoHQ/anubis](https://github.com/TecharoHQ/anubis/tree/main)
 ```
 
 **NOTE:** The default lists included are aggressive and intended to block bad agents **ON SERVERS**. Applying them on a router or desktop **WILL** break connectivity to many services.
@@ -36,7 +38,7 @@ Before you begin, ensure you have the following installed on your system:
 
 - `iptables`
 - `ipset`
-- For Debian/Ubuntu: `netfilter-persistent`
+- For Debian/Ubuntu: `iptables-persistent` and `ipset-persistent`
 - For RHEL family (CentOS, RHEL, Fedora, Rocky Linux, AlmaLinux): `iptables-services` and `ipset-service`
 
 ## Installation & Setup
@@ -46,7 +48,7 @@ Follow these steps to set up the project on your server.
 ### 1. Clone the Repository
 
 ```bash
-git clone <repo-url> ~/git-repos/ip_list_aggregator
+git clone https://github.com/afss0/ip_list_aggregator/ ~/git-repos/ip_list_aggregator
 cd ~/git-repos/ip_list_aggregator
 ```
 
@@ -55,7 +57,7 @@ cd ~/git-repos/ip_list_aggregator
 Install the required requests library using the requirements.txt file.
 
 ```bash
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 ### 3. Install System Dependencies
@@ -72,7 +74,12 @@ sudo apt-get install ipset iptables-persistent ipset-persistent
 - For CentOS/RHEL:
 
 ```bash
-sudo yum install ipset iptables-services ipset-service
+# For RHEL/CentOS 7
+# sudo yum install ipset iptables-services ipset-service
+
+# For RHEL 8+, Fedora, and modern derivatives, use dnf
+sudo dnf install ipset iptables-services ipset-service
+
 sudo systemctl enable iptables
 sudo systemctl enable ipset
 ```
@@ -80,6 +87,7 @@ sudo systemctl enable ipset
 ### 4. Make the Update Script Executable
 
 ```bash
+mkdir -p ~/git-repos/ip_list_aggregator/logs
 sudo chmod +x update_firewall_blocklist.sh
 ```
 
@@ -134,7 +142,7 @@ Add the following line to run the script every day at `23:30` and log its output
 
 ```crontab
 # At 23:30 every day, run the IP list aggregator script
-30 23 * * * /usr/bin/python3 ~/git-repos/ip_list_aggregator/ip_list_aggregator.py >> ~/git-repos/ip_list_aggregator/logs/cron.log 2>&1
+30 23 * * * /usr/bin/python3 $HOME/git-repos/ip_list_aggregator/ip_list_aggregator.py >> $HOME/git-repos/ip_list_aggregator/logs/cron.log 2>&1
 ```
 
 ### 2. Root Cron Job (to update the firewall)
