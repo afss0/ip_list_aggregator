@@ -58,18 +58,19 @@ def parse_generic_ips(text: str) -> Set[IPAddressObject]:
 
 # --- Core Logic ---
 
+
 def load_sources() -> List[Dict[str, Any]]:
     """Load sources configuration from sources.json file"""
     try:
-        with open('sources.json', 'r') as f:
+        with open("sources.json", "r") as f:
             sources = json.load(f)
             # Map parser strings to actual functions
             parser_map = {
-                'parse_generic_cidrs': parse_generic_cidrs,
-                'parse_generic_ips': parse_generic_ips
+                "parse_generic_cidrs": parse_generic_cidrs,
+                "parse_generic_ips": parse_generic_ips,
             }
             for source in sources:
-                source['parser'] = parser_map[source['parser']]
+                source["parser"] = parser_map[source["parser"]]
             return sources
     except Exception as e:
         logging.error(f"Failed to load sources.json: {e}")
@@ -110,7 +111,9 @@ def save_to_file(entries: Set[IPAddressObject], filepath: Path) -> bool:
         return False
 
 
-def filter_whitelisted_ips(blacklist: Set[IPAddressObject], whitelist: Set[IPAddressObject]) -> Set[IPAddressObject]:
+def filter_whitelisted_ips(
+    blacklist: Set[IPAddressObject], whitelist: Set[IPAddressObject]
+) -> Set[IPAddressObject]:
     """Remove whitelisted IPs from the blacklist."""
     filtered_blacklist = set()
     for black_entry in blacklist:
@@ -143,7 +146,12 @@ def main():
 
     with requests.Session() as session:
         for source in SOURCES:
-            name, url, parser_func, source_type = source["name"], source["url"], source["parser"], source["type"]
+            name, url, parser_func, source_type = (
+                source["name"],
+                source["url"],
+                source["parser"],
+                source["type"],
+            )
             logging.info(f"Processing source: {name}")
 
             content = fetch_content(session, url)
@@ -167,18 +175,14 @@ def main():
 
     logging.info(f"Total unique blacklist entries collected: {len(blacklist_entries)}")
 
-    # Save blacklist to a buffer file
-    buffer_file = Path("buffer-blacklist.txt")
-    if not save_to_file(blacklist_entries, buffer_file):
-        logging.error(f"Failed to save the buffer blacklist to {buffer_file}")
-        return
-
-    logging.info(f"Buffer blacklist saved to {buffer_file}")
-
     # Filter out whitelisted IPs from the blacklist
-    filtered_blacklist_entries = filter_whitelisted_ips(blacklist_entries, whitelist_entries)
+    filtered_blacklist_entries = filter_whitelisted_ips(
+        blacklist_entries, whitelist_entries
+    )
 
-    logging.info(f"Total unique blacklist entries after filtering: {len(filtered_blacklist_entries)}")
+    logging.info(
+        f"Total unique blacklist entries after filtering: {len(filtered_blacklist_entries)}"
+    )
 
     logging.info("Summarizing network list to remove redundant subnets...")
     summarized_entries = set(ipaddress.collapse_addresses(filtered_blacklist_entries))

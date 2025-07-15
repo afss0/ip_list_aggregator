@@ -1,12 +1,32 @@
 [
-    {
-        "name": "avastel",
-        "url": "https://raw.githubusercontent.com/antoinevastel/avastel-bot-ips-lists/refs/heads/master/avastel-proxy-bot-ips-blocklist-8days.txt",
-        "parser": "parse_generic_cidrs"
-    },
-    {
-        "name": "ipsum",
-        "url": "https://raw.githubusercontent.com/stamparm/ipsum/refs/heads/master/ipsum.txt",
-        "parser": "parse_generic_ips"
-    }
+  {
+    "name": "antoinevastel/avastel-bot-ips-lists",
+    "url": "https://raw.githubusercontent.com/antoinevastel/avastel-bot-ips-lists/refs/heads/master/avastel-proxy-bot-ips-blocklist-8days.txt",
+    "parser": "parse_generic_cidrs",
+    "type": "blacklist"
+  },
+  {
+    "name": "stamparm/ipsum",
+    "url": "https://raw.githubusercontent.com/stamparm/ipsum/refs/heads/master/ipsum.txt",
+    "parser": "parse_generic_ips",
+    "type": "blacklist"
+  },
+  {
+    "name": "jhassine/server-ip-addresses",
+    "url": "https://raw.githubusercontent.com/jhassine/server-ip-addresses/refs/heads/master/data/datacenters.txt",
+    "parser": "parse_generic_cidrs",
+    "type": "blacklist"
+  },
+  {
+    "name": "X4BNet/lists_vpn/datacenter",
+    "url": "https://raw.githubusercontent.com/X4BNet/lists_vpn/refs/heads/main/output/datacenter/ipv4.txt",
+    "parser": "parse_generic_cidrs",
+    "type": "blacklist"
+  },
+  {
+    "name": "X4BNet/lists_vpn/vpn",
+    "url": "https://raw.githubusercontent.com/X4BNet/lists_vpn/refs/heads/main/output/vpn/ipv4.txt",
+    "parser": "parse_generic_cidrs",
+    "type": "whitelist"
+  }
 ]
