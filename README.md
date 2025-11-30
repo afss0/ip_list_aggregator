@@ -83,15 +83,15 @@ mkdir -p ~/git-repos/ip_list_aggregator/logs
 sudo chmod +x update_firewall_blocklist.sh
 ```
 
-### 5. Generate the IP List
+### 4. Generate the IP List
 
 Run the Python script. This will create the merged-ip-list.txt file in the current directory.
 
 ```bash
-python3 ip_list_aggregator.py --output "/var/tmp/ip_list_aggregator/merged-ip-list.txt"
+python3 ip_list_aggregator.py --output "/tmp/merged-ip-list.txt" >> /tmp/ip_list_aggregator.log 2>&1
 ```
 
-### 2. Update the Firewall
+### 5. Update the Firewall
 
 Run the shell script with sudo. This will create the ipset and apply the iptables rules.
 
@@ -99,7 +99,7 @@ Run the shell script with sudo. This will create the ipset and apply the iptable
 sudo ./update_firewall_blocklist.sh
 ```
 
-### 3. Verify the Results
+### 6. Verify the Results
 
 Check that the ipset was created and populated:
 
@@ -122,6 +122,12 @@ To keep the blocklist updated automatically, set up two cron jobs.
 
 ### 1. User Cron Job (to run the Python script)
 
+First, copy the script to the /usr/local/bin folder:
+
+```bash
+sudo cp ~/git-repos/ip_list_aggregator /usr/local/bin/ip_list_aggregator/
+```
+
 ```bash
 crontab -e
 ```
@@ -130,7 +136,7 @@ Add the following line to run the script every day at `23:30` and log its output
 
 ```crontab
 # At 23:30 every day, run the IP list aggregator script
-30 23 * * * /usr/bin/python3 $HOME/git-repos/ip_list_aggregator/ip_list_aggregator.py >> $HOME/git-repos/ip_list_aggregator/logs/cron.log 2>&1
+30 23 * * * /usr/bin/python3 /usr/local/bin/ip_list_aggregator/ip_list_aggregator.py --output "/tmp/merged-ip-list.txt" >> /tmp/ip_list_aggregator.log 2>&1
 ```
 
 ### 2. Root Cron Job (to update the firewall)
