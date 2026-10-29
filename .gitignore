@@ -1,1 +1,9 @@
 .aider*
+
+# generated output (rebuild with ip_list_aggregator.py)
+merged-ip-list.txt
+*.tmp
+
+# python
+__pycache__/
+*.pyc
