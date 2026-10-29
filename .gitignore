@@ -1,5 +1,9 @@
 .aider*
 
+# generated output (published as a release asset, never committed)
+merged-ip-list.txt
+SHA256SUMS
+
 # python
 __pycache__/
 *.pyc
