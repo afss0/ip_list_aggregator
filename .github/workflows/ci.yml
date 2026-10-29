@@ -16,23 +16,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Python unit tests
-        run: python3 -m unittest discover -s tests -v
+      - name: Unit tests
+        run: make test
 
-      - name: Shell syntax
-        run: |
-          bash -n update_firewall_blocklist.sh
-          bash -n tests/scenarios.sh
-          bash -n tests/integration.sh
-
-      - name: shellcheck
+      - name: Install shellcheck
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
-          shellcheck -S warning update_firewall_blocklist.sh tests/scenarios.sh tests/integration.sh
+
+      - name: Lint (bash -n + shellcheck)
+        run: make lint
 
       - name: Applier scenarios (stubbed ipset/iptables)
-        run: bash tests/scenarios.sh
+        run: make scenarios
 
   integration:
     name: Kernel-level apply (container)
@@ -40,12 +36,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build test image
-        run: docker build -t ip_list_aggregator:test -f tests/Dockerfile .
-
       - name: Apply and verify with real ipset/iptables
-        run: |
-          docker run --rm --privileged \
-            -v "${PWD}:/repo:ro" \
-            ip_list_aggregator:test \
-            bash /repo/tests/integration.sh
+        run: make integration
