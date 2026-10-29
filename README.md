@@ -127,6 +127,8 @@ Default sources:
 
 - [Antoine Vastel's IP Lists](https://github.com/antoinevastel/avastel-bot-ips-lists)
 - [Stamparm's Ipsum](https://github.com/stamparm/ipsum)
+- [Borestad's AbuseIPDB blocklist](https://github.com/borestad/blocklist-abuseipdb) (`s100-3d`,
+  ~57k addresses reported at ~100% confidence in the last 3 days)
 
 > If you want to protect your web applications against bots, you may also want to check out
 > [TecharoHQ/anubis](https://github.com/TecharoHQ/anubis/tree/main).

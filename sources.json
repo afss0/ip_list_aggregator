@@ -10,5 +10,11 @@
     "url": "https://raw.githubusercontent.com/stamparm/ipsum/refs/heads/master/ipsum.txt",
     "parser_type": "parse_generic_ips",
     "type": "blacklist"
+  },
+  {
+    "name": "borestad/blocklist-abuseipdb",
+    "url": "https://raw.githubusercontent.com/borestad/blocklist-abuseipdb/main/abuseipdb-s100-3d.ipv4",
+    "parser_type": "parse_generic_ips",
+    "type": "blacklist"
   }
 ]
