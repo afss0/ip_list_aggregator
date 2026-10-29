@@ -278,6 +278,17 @@ class ExitCodeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 5)
         self.assertIn("File save failed", result.stderr)
 
+    def test_source_failure_is_named_once(self):
+        empty = self.dir / "empty.txt"
+        empty.write_text("\n", encoding="utf-8")
+        sources = self.sources(
+            self.blacklist("feed-x", file_url(empty), parser="parse_generic_ips")
+        )
+        result = run_script("--sources", str(sources), "-o", str(self.out), cwd=self.dir)
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("Source failed: feed-x: empty response", result.stderr)
+        self.assertNotIn("feed-x: feed-x:", result.stderr)
+
     def test_output_is_sorted_and_deduplicated(self):
         sources = self.sources(self.blacklist("feed", file_url(self.feed)))
         run_script("--sources", str(sources), "-o", str(self.out), cwd=self.dir)
