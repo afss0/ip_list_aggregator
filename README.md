@@ -176,6 +176,25 @@ Useful flags: `--sources PATH`, `--timeout SECONDS` (default 30), `--attempts N`
 `--min-prefix N` (default 8), `--coverage-ratio N` (default 10), `--force` (disable the coverage
 guard for an intentional big change).
 
+## Publishing the list as a release asset
+
+A clone does not need the generated file: `.github/workflows/publish-blocklist.yml` builds it from
+`main` and refreshes a rolling `latest` release every day at 00:15 UTC (also on `workflow_dispatch`
+and on pushes that touch the aggregator or `sources.json`). No commit is made — the release asset
+is the artifact.
+
+Stable download URL, no token needed:
+
+```bash
+curl -fsSL https://github.com/afss0/ip_list_aggregator/releases/latest/download/merged-ip-list.txt -o merged-ip-list.txt
+curl -fsSL https://github.com/afss0/ip_list_aggregator/releases/latest/download/SHA256SUMS -o SHA256SUMS
+sha256sum -c SHA256SUMS
+```
+
+The job stops before publishing when the aggregator exits non-zero (configuration error, dead feed,
+sanity guard), so a partial or refused build never reaches consumers. Scheduled runs can be delayed
+by GitHub under load; the asset always carries its generation timestamp in the release notes.
+
 ## How the applier protects itself
 
 1. Refuses a list that is missing, empty, a symlink, or not owned by `root`.
