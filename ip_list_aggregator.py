@@ -238,7 +238,7 @@ class IPProcessor:
     def process_source(self, source: SourceConfig) -> int:
         content = self.fetch(source.url)
         if not content.strip():
-            raise SourceError(f"{source.name}: empty response")
+            raise SourceError("empty response")
 
         ipv6 = count_ipv6_addresses(content)
         if ipv6:
@@ -254,7 +254,7 @@ class IPProcessor:
 
         entries = parser.parse(content)
         if not entries:
-            raise SourceError(f"{source.name}: no entries parsed (feed format changed?)")
+            raise SourceError("no entries parsed (feed format changed?)")
 
         target = (
             self.blacklist
