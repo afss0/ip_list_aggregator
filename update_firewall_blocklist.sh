@@ -1,126 +1,135 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# This script flushes and repopulates iptables rules from a blocklist file using the 'ipset' tool.
+# Apply an aggregated IPv4 blocklist to an ipset and two dedicated iptables chains.
 #
-# MUST BE RUN AS ROOT. IT IS ADVISED TO COPY OR SYMLINK THIS FILE TO /usr/local/sbin/update_firewall_blocklist.sh AND MAKE IT EXECUTABLE
-# ADD TO THE ROOT USER CRONTAB
+# Design notes:
+#   * the list must be root-owned: a file writable by an unprivileged account must
+#     never reach the kernel firewall;
+#   * every ipset/iptables call is checked, so a failed swap is a failed run;
+#   * the block set is built out of band and swapped in atomically;
+#   * management addresses come from ALLOW_FILE and are RETURNed before the DROP.
+#
+# Usage: update_firewall_blocklist.sh [LIST_FILE]
 
-# --- Configuration ---
-IP_LIST_FILE="/tmp/merged-ip-list.txt"
-SET_NAME="bad_ips_set"
-MAX_ELEMS=500000
+set -euo pipefail
 
-# --- Function to make rules persistent ---
-make_rules_persistent() {
-    echo "Attempting to make firewall rules persistent..."
+LIST_FILE="${1:-/var/lib/ip-list-aggregator/merged-ip-list.txt}"
+SET_NAME="${SET_NAME:-bad_ips_set}"
+ALLOW_SET="${ALLOW_SET:-ip_allow_set}"
+ALLOW_FILE="${ALLOW_FILE:-/etc/ip-list-allow.txt}"
+CHAIN_IN="${CHAIN_IN:-IPBLOCK_IN}"
+CHAIN_OUT="${CHAIN_OUT:-IPBLOCK_OUT}"
+MAX_ELEMS="${MAX_ELEMS:-500000}"
+MIN_PREFIX="${MIN_PREFIX:-8}"
+LOCK_FILE="${LOCK_FILE:-/run/lock/ip-list-apply.lock}"
+VALID_LINE='^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$'
 
-    # Check for /etc/os-release to determine the Linux distribution
-    if [ -f /etc/os-release ]; then
-        # Source the os-release file to get variables like ID and ID_LIKE
-        . /etc/os-release
-    else
-        echo "Warning: Cannot determine OS distribution. /etc/os-release not found."
-        echo "Please save your iptables/ipset rules manually."
-        return
+log() { printf '%s\n' "$*"; }
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+# --- preconditions ---------------------------------------------------------
+[[ ${EUID} -eq 0 ]] || die "must run as root (use sudo)"
+
+if [[ -L ${LIST_FILE} ]]; then
+    die "refusing symlinked list: ${LIST_FILE}"
+fi
+[[ -f ${LIST_FILE} ]] || die "list not found: ${LIST_FILE}"
+[[ -s ${LIST_FILE} ]] || die "list is empty: ${LIST_FILE}"
+
+list_owner=$(stat -c '%u' "${LIST_FILE}")
+[[ ${list_owner} -eq 0 ]] || die "list must be owned by root, found uid ${list_owner}: ${LIST_FILE}"
+
+# --- single instance -------------------------------------------------------
+exec 9>"${LOCK_FILE}"
+flock -n 9 || die "another apply is already running (lock: ${LOCK_FILE})"
+
+# --- validate content before it reaches the kernel -------------------------
+total=$(wc -l < "${LIST_FILE}")
+[[ ${total} -gt 0 ]] || die "list has no entries: ${LIST_FILE}"
+
+malformed=$(grep -cvE "${VALID_LINE}" "${LIST_FILE}" || true)
+if [[ ${malformed} -ne 0 ]]; then
+    first=$(grep -nvE "${VALID_LINE}" "${LIST_FILE}" | head -n 1)
+    die "${malformed} malformed line(s) in ${LIST_FILE} (first: ${first})"
+fi
+
+wide=$(awk -F/ -v min="${MIN_PREFIX}" 'NF == 2 && $2 + 0 < min { print; exit }' "${LIST_FILE}")
+[[ -z ${wide} ]] || die "implausible network rejected (prefix < /${MIN_PREFIX}): ${wide}"
+
+unique=$(awk '!seen[$1]++' "${LIST_FILE}" | wc -l)
+
+# --- allow set: never block management paths -------------------------------
+ipset create "${ALLOW_SET}" hash:net family inet -exist || die "cannot create ${ALLOW_SET}"
+ipset flush "${ALLOW_SET}" || die "cannot flush ${ALLOW_SET}"
+if [[ -f ${ALLOW_FILE} ]]; then
+    while read -r cidr _rest; do
+        [[ -z ${cidr} || ${cidr} == \#* ]] && continue
+        ipset add "${ALLOW_SET}" "${cidr}" -exist || die "cannot add ${cidr} to ${ALLOW_SET}"
+    done < "${ALLOW_FILE}"
+fi
+
+# --- build the new block set out of band -----------------------------------
+TEMP="${SET_NAME}_temp"
+ipset create "${TEMP}" hash:net family inet maxelem "${MAX_ELEMS}" -exist || die "cannot create ${TEMP}"
+ipset flush "${TEMP}" || die "cannot flush ${TEMP}"
+
+if ! awk '!seen[$1]++ { print "add '"${TEMP}"' " $1 }' "${LIST_FILE}" | ipset restore; then
+    ipset destroy "${TEMP}" || true
+    die "failed to load entries into ${TEMP}; live set untouched"
+fi
+
+loaded=$(ipset list "${TEMP}" | awk '/Number of entries:/ { print $4 }')
+if [[ ${loaded} -ne ${unique} ]]; then
+    ipset destroy "${TEMP}" || true
+    die "entry count mismatch for ${TEMP}: file=${unique} kernel=${loaded}"
+fi
+
+# --- swap atomically -------------------------------------------------------
+if ipset -q list "${SET_NAME}" >/dev/null 2>&1; then
+    if ! ipset swap "${TEMP}" "${SET_NAME}"; then
+        ipset destroy "${TEMP}" || true
+        die "swap failed; live set ${SET_NAME} left untouched"
     fi
+    ipset destroy "${TEMP}" || log "warning: could not destroy ${TEMP}"
+else
+    if ! ipset rename "${TEMP}" "${SET_NAME}"; then
+        ipset destroy "${TEMP}" || true
+        die "rename failed; ${SET_NAME} not created"
+    fi
+fi
 
-    # Use a case statement based on the OS ID
-    case "$ID" in
-        debian|ubuntu)
-            # For Debian/Ubuntu, check for netfilter-persistent
-            if command -v netfilter-persistent &>/dev/null; then
-                echo "Debian/Ubuntu detected. Saving rules with netfilter-persistent..."
-                netfilter-persistent save
-            else
-                echo "Warning: 'netfilter-persistent' command not found."
-                echo "To make rules persistent on Debian/Ubuntu, please install 'iptables-persistent' package:"
-                echo "  sudo apt-get update && sudo apt-get install iptables-persistent"
-                echo "After installation, the rules should be saved automatically by this script on the next run."
-            fi
-            ;;
+applied=$(ipset list "${SET_NAME}" | awk '/Number of entries:/ { print $4 }')
+if [[ ${applied} -ne ${unique} ]]; then
+    die "post-swap verification failed: ${SET_NAME} has ${applied} entries, expected ${unique}"
+fi
 
-        centos|rhel|fedora|rocky|almalinux)
-            # For RHEL family, check for iptables-services and ipset-service
-            if command -v service &>/dev/null && (systemctl list-unit-files | grep -q 'iptables.service') && (systemctl list-unit-files | grep -q 'ipset.service'); then
-                echo "RHEL/CentOS/Fedora family detected. Saving rules with iptables and ipset services..."
-                service iptables save
-                service ipset save
-            else
-                echo "Warning: 'iptables.service' or 'ipset.service' not found or enabled."
-                echo "To make rules persistent on RHEL/CentOS/Fedora, please install and enable the services:"
-                echo "  sudo yum install iptables-services ipset-service"
-                echo "  sudo systemctl enable iptables"
-                echo "  sudo systemctl enable ipset"
-                echo "After installation, the rules should be saved automatically by this script on the next run."
-            fi
-            ;;
-
-        *)
-            echo "Warning: Unsupported OS '$ID' for automatic persistence."
-            echo "Please consult your OS documentation on how to make iptables and ipset rules persistent."
-            ;;
-    esac
+# --- link to INPUT/OUTPUT through dedicated chains -------------------------
+ensure_chain() {
+    local parent=${1} chain=${2} direction=${3}
+    if ! iptables -S "${chain}" >/dev/null 2>&1; then
+        iptables -N "${chain}" || die "cannot create chain ${chain}"
+    fi
+    iptables -F "${chain}" || die "cannot flush chain ${chain}"
+    iptables -A "${chain}" -m set --match-set "${ALLOW_SET}" "${direction}" -j RETURN \
+        || die "cannot add allow rule to ${chain}"
+    iptables -A "${chain}" -m set --match-set "${SET_NAME}" "${direction}" -j DROP \
+        || die "cannot add drop rule to ${chain}"
+    if ! iptables -C "${parent}" -j "${chain}" >/dev/null 2>&1; then
+        iptables -I "${parent}" 1 -j "${chain}" || die "cannot jump ${parent} -> ${chain}"
+    fi
 }
 
+ensure_chain INPUT "${CHAIN_IN}" src
+ensure_chain OUTPUT "${CHAIN_OUT}" dst
 
-# --- Safety Checks ---
-if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root. Use 'sudo'."
-   exit 1
-fi
-
-if [ ! -s "$IP_LIST_FILE" ]; then
-    echo "Error: IP list file not found or is empty: $IP_LIST_FILE"
-    exit 1
-fi
-
-echo "Updating ipset blocklist..."
-
-# --- Main Logic ---
-
-# 1. Create a new, temporary set with a specified max size.
-TEMP_SET_NAME="${SET_NAME}_temp"
-ipset create $TEMP_SET_NAME hash:net family inet maxelem $MAX_ELEMS -exist
-
-# 2. Use 'ipset restore' to bulk-load the IPs into the temporary set.
-echo "Loading entries into temporary set..."
-if ! awk '{ print "add '"$TEMP_SET_NAME"' " $1 }' "$IP_LIST_FILE" | ipset restore; then
-    echo "Error: Failed to load IPs into ipset. Aborting."
-    ipset destroy $TEMP_SET_NAME
-    exit 1
-fi
-
-# 3. Atomically update the main set.
-if ipset -q list $SET_NAME >/dev/null 2>&1; then
-    # The main set exists, so swap the temp set with the main set.
-    echo "Main set exists. Swapping new blocklist into place..."
-    ipset swap $TEMP_SET_NAME $SET_NAME
-    ipset destroy $TEMP_SET_NAME
+# --- persistence, reported honestly ---------------------------------------
+if command -v netfilter-persistent >/dev/null 2>&1; then
+    if ! netfilter-persistent save; then
+        log "warning: netfilter-persistent save failed; rules will not survive a reboot"
+    fi
 else
-    # The main set does not exist (first run), so rename the temp set.
-    echo "Main set does not exist. Renaming temporary set..."
-    ipset rename $TEMP_SET_NAME $SET_NAME
+    log "note: netfilter-persistent not found; rules will not survive a reboot"
 fi
 
-# --- Link the ipset to iptables (if not already linked) ---
-RULE_COMMENT="Drop traffic from bad_ips_set"
-
-# For inbound traffic (from source)
-if ! iptables -C INPUT -m set --match-set $SET_NAME src -j DROP &>/dev/null; then
-    echo "Adding iptables rule to block IPs in '$SET_NAME' on INPUT chain..."
-    iptables -I INPUT 1 -m set --match-set $SET_NAME src -m comment --comment "$RULE_COMMENT" -j DROP
-fi
-
-# For outbound traffic (to destination)
-if ! iptables -C OUTPUT -m set --match-set $SET_NAME dst -j DROP &>/dev/null; then
-    echo "Adding iptables rule to block IPs in '$SET_NAME' on OUTPUT chain..."
-    iptables -I OUTPUT 1 -m set --match-set $SET_NAME dst -m comment --comment "$RULE_COMMENT" -j DROP
-fi
-
-echo "Ipset blocklist update complete. Total entries: $(ipset list $SET_NAME | grep 'Number of entries' | cut -d' ' -f4)"
-
-# --- Make Rules Persistent ---
-make_rules_persistent
-
-echo "Script finished."
+log "Applied ${applied} entries to ${SET_NAME} (allow list: ${ALLOW_FILE})"
 exit 0
