@@ -1,0 +1,73 @@
+name: Publish blocklist
+
+on:
+  schedule:
+    - cron: "15 0 * * *" # daily, 00:15 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - sources.json
+      - ip_list_aggregator.py
+      - .github/workflows/publish-blocklist.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-blocklist
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Exits non-zero on a config error, a dead feed or a sanity guard, which
+      # stops the job: nothing stale or partial is ever published.
+      - name: Build the list
+        run: python3 ip_list_aggregator.py --output merged-ip-list.txt
+
+      - name: Write checksum and metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          entries=$(grep -c . merged-ip-list.txt)
+          bytes=$(stat -c '%s' merged-ip-list.txt)
+          sha256sum merged-ip-list.txt > SHA256SUMS
+          {
+            echo "entries=${entries}"
+            echo "bytes=${bytes}"
+            echo "sha256=$(cut -d' ' -f1 SHA256SUMS)"
+            echo "generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      # Rolling release: one tag ("latest"), assets replaced in place, so the
+      # download URL stays stable and no file is committed to the repository.
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENTRIES: ${{ steps.meta.outputs.entries }}
+          BYTES: ${{ steps.meta.outputs.bytes }}
+          SHA: ${{ steps.meta.outputs.sha256 }}
+          GENERATED: ${{ steps.meta.outputs.generated }}
+        run: |
+          set -euo pipefail
+          notes=$(printf 'Blocklist built from commit %.7s\n\n- entries: %s\n- bytes: %s\n- sha256: %s\n- generated: %s\n\nAssets: merged-ip-list.txt (one CIDR per line, IPv4) and SHA256SUMS.\n' \
+            "$GITHUB_SHA" "$ENTRIES" "$BYTES" "$SHA" "$GENERATED")
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest merged-ip-list.txt SHA256SUMS --clobber
+            gh release edit latest --notes "$notes"
+          else
+            gh release create latest merged-ip-list.txt SHA256SUMS \
+              --title "Blocklist (rolling)" \
+              --notes "$notes"
+          fi
