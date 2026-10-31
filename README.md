@@ -1,40 +1,40 @@
 # IP List Aggregator
 
 Download, validate, de-duplicate and collapse IPv4 blocklists from several sources into a single
-CIDR file, then apply that file to the kernel firewall as an `ipset` with two dedicated
-`iptables` chains.
+CIDR file, then apply that file to the kernel firewall as an `ipset` with two dedicated `iptables`
+chains.
 
 Two components:
 
-1. **`ip_list_aggregator.py`** — fetches the configured feeds, validates every entry, subtracts the
+1. `ip_list_aggregator.py` fetches the configured feeds, validates every entry, subtracts the
    whitelist, collapses the result and writes the list atomically.
-2. **`update_firewall_blocklist.sh`** — applies the list as a kernel block set, refuses anything it
-   cannot trust, and verifies what the kernel actually accepted.
+2. `update_firewall_blocklist.sh` applies the list as a kernel block set, refuses lists it cannot
+   fully validate, and checks what the kernel actually accepted.
 
-> **NOTE:** the default lists are aggressive and intended for **servers**. Applying them on a
-> router or a desktop **WILL** break connectivity to many services.
+> **NOTE:** the default lists are aggressive and meant for servers. On a router or a desktop they
+> **WILL** break connectivity to many services.
 
-## What it actually does with the addresses
+## How collapsing works
 
-Feeds are parsed into networks, deduplicated, and collapsed with `ipaddress.collapse_addresses`.
-Collapsing only merges sibling networks whose union is exactly a larger network:
+Feeds are parsed into networks and deduplicated, then collapsed with
+`ipaddress.collapse_addresses`. Collapsing only merges sibling networks whose union is exactly a
+larger network:
 
 - `1.1.1.0/25` + `1.1.1.128/25` → `1.1.1.0/24`
 - all 256 addresses of `1.1.1.0/24` present as `/32` → `1.1.1.0/24`
-- `1.1.1.1/32` + `1.1.1.2/32` → **still two `/32`** (the tool never widens a block to cover
-  addresses the feeds did not list)
 
 ## Requirements
 
-- Python 3.9+ (standard library only — no `pip install` needed)
+- Python 3.9 or newer. The aggregator imports only the standard library, so there is nothing to
+  install.
 - For the applier: Linux with `ipset`, `iptables`, and a way to persist rules
   (`iptables-persistent`/`netfilter-persistent` on Debian/Ubuntu; `iptables-services` +
-  `ipset-service` on the RHEL family)
+  `ipset-service` on the RHEL family).
 
 ## Install
 
-The aggregator resolves `sources.json` **next to the script**, so the packaged layout keeps working
-from any working directory (including cron and systemd).
+The aggregator looks for `sources.json` next to the script rather than in the working directory, so
+the packaged layout keeps working under cron and systemd.
 
 ```bash
 sudo install -d -m 0755 /usr/local/lib/ip_list_aggregator
@@ -119,9 +119,9 @@ sudo systemctl enable --now ip-list-aggregator.timer
 | `type` | `blacklist` | addresses to block |
 | | `whitelist` | addresses removed from the blacklist (exact range subtraction) |
 
-A `parser_type` that does not match the feed silently narrows coverage (a `/8` feed read with
-`parse_generic_ips` becomes a single `/32`), so the tool fails the run when a source yields zero
-entries and refuses networks wider than `/8`.
+A `parser_type` that does not match the feed narrows coverage without raising an error: read a `/8`
+feed with `parse_generic_ips` and you get a single `/32`. Two guards catch the worst cases: a source
+that yields zero entries fails the run, and no network wider than `/8` is accepted.
 
 Default sources:
 
@@ -130,7 +130,7 @@ Default sources:
 - [Borestad's AbuseIPDB blocklist](https://github.com/borestad/blocklist-abuseipdb) (`s100-3d`,
   ~57k addresses reported at ~100% confidence in the last 3 days)
 
-> If you want to protect your web applications against bots, you may also want to check out
+> For bot filtering at the application layer rather than the network layer, see
 > [TecharoHQ/anubis](https://github.com/TecharoHQ/anubis/tree/main).
 
 ### Allow-list (management addresses)
@@ -144,7 +144,7 @@ Default sources:
 203.0.113.10
 ```
 
-These addresses are loaded into `ip_allow_set` and matched with a `RETURN` **before** the block-set
+These addresses are loaded into `ip_allow_set` and matched with a `RETURN` before the block-set
 `DROP` in both chains, so a feed that lists your own address cannot lock you out.
 
 ## Exit codes
@@ -153,7 +153,7 @@ These addresses are loaded into `ip_allow_set` and matched with a `RETURN` **bef
 |---|---|---|
 | `0` | success | replaced |
 | `2` | configuration error (missing/invalid `sources.json`, unknown `parser_type`) | untouched |
-| `3` | every source failed, or a partial update (some sources failed) | untouched / written with the surviving sources |
+| `3` | every source failed, or a partial update (some sources failed) | kept if every source failed; otherwise overwritten with the surviving sources |
 | `4` | sanity guard: network wider than `/8`, coverage jump above the ratio, empty blacklist | untouched |
 | `5` | output could not be written | untouched |
 
@@ -178,14 +178,13 @@ Useful flags: `--sources PATH`, `--timeout SECONDS` (default 30), `--attempts N`
 `--min-prefix N` (default 8), `--coverage-ratio N` (default 10), `--force` (disable the coverage
 guard for an intentional big change).
 
-## Publishing the list as a release asset
+## Pre-made list
 
-A clone does not need the generated file: `.github/workflows/publish-blocklist.yml` builds it from
-`main` and refreshes a rolling `latest` release every day at 00:15 UTC (also on `workflow_dispatch`
-and on pushes that touch the aggregator or `sources.json`). No commit is made — the release asset
-is the artifact.
+`.github/workflows/publish-blocklist.yml` builds the list from `main`
+and refreshes a rolling `latest` release every day at 00:15 UTC. It also runs on `workflow_dispatch`
+and on pushes that touch the aggregator or `sources.json`.
 
-Stable download URL, no token needed:
+The download URL is stable and needs no token:
 
 ```bash
 curl -fsSL https://github.com/afss0/ip_list_aggregator/releases/latest/download/merged-ip-list.txt -o merged-ip-list.txt
@@ -194,35 +193,36 @@ sha256sum -c SHA256SUMS
 ```
 
 The job stops before publishing when the aggregator exits non-zero (configuration error, dead feed,
-sanity guard), so a partial or refused build never reaches consumers. Scheduled runs can be delayed
-by GitHub under load; the asset always carries its generation timestamp in the release notes.
+sanity guard), so a partial or refused build is never published. Scheduled runs can be delayed by
+GitHub under load; the release notes always carry the generation timestamp.
 
-## How the applier protects itself
+## What the applier checks
 
-1. Refuses a list that is missing, empty, a symlink, or not owned by `root`.
-2. Refuses malformed lines and any network wider than `/8` **before** the kernel sees them.
-3. Builds `bad_ips_set_temp`, compares `Number of entries` with the file, and only then swaps it
-   into place atomically (`ipset swap`), verifying the count again afterwards.
-4. Holds a `flock`, so two concurrent runs cannot corrupt each other's temp set.
-5. Rebuilds `IPBLOCK_IN`/`IPBLOCK_OUT` (allow `RETURN` first, block `DROP` second) and inserts the
-   jump into `INPUT`/`OUTPUT` at most once.
-6. Reports persistence honestly: if `netfilter-persistent` is missing, it says so instead of
-   pretending the rules will survive a reboot.
+1. It refuses a list that is missing, empty, a symlink, or not owned by `root`.
+2. It refuses malformed lines and any network wider than `/8` before the kernel sees them.
+3. It builds `bad_ips_set_temp`, compares its `Number of entries` against the file, and only then
+   swaps it into place with `ipset swap`. The count is verified once more after the swap.
+4. It holds a `flock`, so two concurrent runs cannot corrupt each other's temp set.
+5. It rebuilds `IPBLOCK_IN`/`IPBLOCK_OUT` with the allow `RETURN` first and the block `DROP` second,
+   and inserts the jump into `INPUT`/`OUTPUT` at most once.
+6. It warns when `netfilter-persistent` is missing rather than implying the rules will survive a
+   reboot.
 
 ## Persistence
 
-After a successful run, save the rules:
+When `netfilter-persistent` is installed, the applier saves the rules at the end of every run, so on
+Debian and Ubuntu there is nothing to do by hand. Without it, the script says so and the rules are
+gone after a reboot.
+
+The RHEL family is not covered by that call. Save after each refresh, or add the command to the
+unit:
 
 ```bash
-# Debian/Ubuntu
-sudo netfilter-persistent save
-
-# RHEL family
 sudo service iptables save && sudo service ipset save
 ```
 
-`ipset swap` also replaces the set contents on the next run, so the saved state is refreshed by the
-daily job.
+`ipset swap` gives every run a fresh live set, and the save at the end carries the rules across a
+reboot.
 
 ## Tests
 
@@ -244,10 +244,10 @@ listener is dropped, adds the peer to the allow-list, and verifies the connectio
 
 ## Limitations
 
-- **IPv4 only.** IPv6 literals in a feed are ignored, with a warning that reports how many were
-  skipped. IPv6 support needs a separate `family inet6` set and `ip6tables` chains.
-- The block set is capped at `MAX_ELEMS` (default 500000) entries.
-- The applier assumes `iptables`/`ipset` are present and functional; on an nftables-only host use
+- IPv4 only. IPv6 literals in a feed are ignored, and the warning says how many were skipped.
+  Supporting IPv6 needs a separate `family inet6` set and `ip6tables` chains.
+- The block set is capped at `MAX_ELEMS` entries (default 500000).
+- The applier assumes `iptables`/`ipset` are present and functional. On an nftables-only host, call
   `iptables-nft`/`iptables-legacy` explicitly.
 
 ## Recovery from a lockout
@@ -264,4 +264,4 @@ Adding it to the allow-list file is what makes the fix survive the next run.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
